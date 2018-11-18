@@ -240,4 +240,13 @@ class ParameterizedTypeTest extends ScalaLightCodeInsightFixtureTestAdapter {
       |  Foo(F.lift((a, F.lift(()))))
     """.stripMargin
   )
+
+  def testSCL13042(): Unit = {
+    val text =
+      """
+        |def f[R[_], T](fun: String => R[T]): String => R[T] = fun
+        |val result = f(str => Option(str))
+      """.stripMargin
+    checkTextHasNoErrors(text)
+  }
 }
