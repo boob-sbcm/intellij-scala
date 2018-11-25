@@ -177,8 +177,12 @@ trait ScalaConformance extends api.Conformance {
     }
 
     trait UndefinedSubstVisitor extends ScalaTypeVisitor {
-      override def visitUndefinedType(u: UndefinedType) {
-        result = constraints.withUpper(u.typeParameter.typeParamId, l)
+      override def visitUndefinedType(u: UndefinedType): Unit = l match {
+        case ParameterizedType(ScAbstractType(_, _, upper), _) if upper.isAny =>
+          //temporary solution to avoid creating Any[_] upper bounds on type vars
+          result = constraints
+        case _ =>
+          result = constraints.withUpper(u.typeParameter.typeParamId, l)
       }
     }
 
@@ -859,34 +863,6 @@ trait ScalaConformance extends api.Conformance {
       r.visitType(rightVisitor)
       if (result != null) return
 
-      p.designator match {
-        case a: ScAbstractType =>
-          val subst = ScSubstitutor.bind(a.typeParameter.typeParameters, p.typeArguments)
-          val upper: ScType =
-            subst.subst(a.upper) match {
-              case ParameterizedType(up, _) => ScParameterizedType(up, p.typeArguments)
-              case up => ScParameterizedType(up, p.typeArguments)
-            }
-          if (!upper.equiv(Any)) {
-            result = conformsInner(upper, r, visited, constraints, checkWeak)
-          } else {
-            result = constraints
-          }
-          if (result.isRight) {
-            val lower: ScType =
-              subst.subst(a.lower) match {
-                case ParameterizedType(low, _) => ScParameterizedType(low, p.typeArguments)
-                case low => ScParameterizedType(low, p.typeArguments)
-              }
-            if (!lower.equiv(Nothing)) {
-              val t = conformsInner(r, lower, visited, result.constraints, checkWeak)
-              if (t.isRight) result = t
-            }
-          }
-          return
-        case _ =>
-      }
-
       rightVisitor = new ParameterizedAbstractVisitor {}
       r.visitType(rightVisitor)
       if (result != null) return
@@ -976,6 +952,55 @@ trait ScalaConformance extends api.Conformance {
                 }
               } else {
                 result = ConstraintsResult.Left
+              }
+            case (a: ScAbstractType, _) =>
+              (if (args1.length != args2.length) findDiffLengthArgs(r, args1.length) else Some((args2, des2))) match {
+                case Some((aArgs, _)) =>
+                  val subst = ScSubstitutor.bind(a.typeParameter.typeParameters, p.typeArguments)
+                  val upper: ScType =
+                    subst.subst(a.upper) match {
+                      case simpleBound if simpleBound.isAny => simpleBound
+                      case ParameterizedType(up, _)         => ScParameterizedType(up, p.typeArguments)
+                      case up                               => ScParameterizedType(up, p.typeArguments)
+                    }
+                  if (!upper.equiv(Any)) {
+                    result = conformsInner(upper, r, visited, constraints, checkWeak)
+                  } else {
+                    result = constraints
+                  }
+                  if (result.isRight) {
+                    val lower: ScType =
+                      subst.subst(a.lower) match {
+                        case simpleBound if simpleBound.isNothing => simpleBound
+                        case ParameterizedType(low, _)            => ScParameterizedType(low, p.typeArguments)
+                        case low                                  => ScParameterizedType(low, p.typeArguments)
+                      }
+                    if (!lower.equiv(Nothing)) {
+                      val t = conformsInner(r, lower, visited, result.constraints, checkWeak)
+                      if (t.isRight) result = t
+                    }
+                  }
+                  result = checkParameterizedType(
+                    a.typeParameter.typeParameters.map(_.psiTypeParameter).iterator,
+                    args1,
+                    aArgs,
+                    constraints,
+                    visited,
+                    checkWeak
+                  )
+                case _ => result = ConstraintsResult.Left
+              }
+              if (args1.length < args2.length && (result == null || !result.isRight)) {
+                val captureLength = args2.length - args1.length
+                val abstracted    = args2.drop(captureLength)
+                result = checkParameterizedType(
+                  a.typeParameter.typeParameters.map(_.psiTypeParameter).iterator,
+                  args1,
+                  abstracted,
+                  constraints,
+                  visited,
+                  checkWeak
+                )
               }
             case (_: UndefinedType, UndefinedType(typeParameter, _)) =>
               (if (args1.length != args2.length) findDiffLengthArgs(l, args2.length) else Some((args1, des1))) match {
