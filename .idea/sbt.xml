@@ -32,9 +32,7 @@
           </set>
         </option>
         <option name="resolveSbtClassifiers" value="true" />
-        <option name="sbtVersion" value="0.13.17" />
-        <option name="useSbtShellForBuild" value="true" />
-        <option name="useSbtShellForImport" value="true" />
+        <option name="useSbtShell" value="true" />
       </SbtProjectSettings>
     </option>
     <option name="maximumHeapSize" value="2048" />
